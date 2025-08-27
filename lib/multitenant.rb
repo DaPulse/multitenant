@@ -108,10 +108,13 @@ module Multitenant
 
       return unless Random.rand < Multitenant.multitenant_violation_log_sample_rate
 
+      caller_frame = caller(2, 1).first rescue 'unknown'
+
       $logger.warn(
         tag: 'multitenant_violation',
         message: 'multitenant usage outside allowed contexts',
         kind: kind,
+        caller: caller_frame
       )
     rescue => e
       begin
