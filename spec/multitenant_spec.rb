@@ -224,13 +224,13 @@ describe Multitenant do
     
     before do
       $logger = mock_logger
-      Multitenant.multitenant_violation_log_sample_rate = 1.0
+      Multitenant.set_multitenant_violation_log_sample_rate(1.0)
       mock_logger.stub(:respond_to?).with(:warn).and_return(true)
       mock_logger.stub(:respond_to?).with(:error).and_return(true)
     end
     
     after do
-      Multitenant.multitenant_violation_log_sample_rate = 0
+      Multitenant.set_multitenant_violation_log_sample_rate(0)
       $logger = nil
     end
 

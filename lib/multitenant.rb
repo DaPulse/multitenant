@@ -13,7 +13,7 @@ module Multitenant
 
     @@multitenant_violation_log_sample_rate = 0
 
-    def multitenant_violation_log_sample_rate=(sample_rate)
+    def set_multitenant_violation_log_sample_rate(sample_rate)
       @@multitenant_violation_log_sample_rate = sample_rate
     end
 
