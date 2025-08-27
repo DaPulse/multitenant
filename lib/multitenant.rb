@@ -9,13 +9,32 @@ module Multitenant
     CURRENT_TENANT = 'Multitenant.current_tenant'.freeze
     ALLOW_DANGEROUS = 'Multitenant.allow_dangerous_cross_tenants'.freeze
     EXTRA_TENANT_IDS = 'Multitenant.extra_tenant_ids'.freeze
+    ALLOW_NEXT_TENANT_OPERATION = 'Multitenant.allow_next_tenant_operation'.freeze
+
+    @@multitenant_violation_log_sample_rate = 0
+
+    def multitenant_violation_log_sample_rate=(sample_rate)
+      @@multitenant_violation_log_sample_rate = sample_rate
+    end
+
+    def multitenant_violation_log_sample_rate
+      @@multitenant_violation_log_sample_rate
+    end
+    
+    def allow_next_tenant_operation
+      Thread.current[ALLOW_NEXT_TENANT_OPERATION] = true
+    end
 
     def current_tenant
       Thread.current[CURRENT_TENANT]
     end
 
     def current_tenant=(value)
-      Thread.current[CURRENT_TENANT] = value
+      if current_tenant != value && value != nil
+        log_multitenant_violation_if_needed('current_tenant_set')
+      end
+      
+      _set_current_tenant(value)
     end
 
     def allow_dangerous_cross_tenants
@@ -23,7 +42,11 @@ module Multitenant
     end
 
     def allow_dangerous_cross_tenants=(value)
-      Thread.current[ALLOW_DANGEROUS] = value
+      if value && !allow_dangerous_cross_tenants
+        log_multitenant_violation_if_needed('allow_dangerous_cross_tenants_set')
+      end
+
+      _set_allow_dangerous_cross_tenants(value)
     end
 
     def extra_tenant_ids
@@ -37,24 +60,64 @@ module Multitenant
     # execute a block scoped to the current tenant
     # unsets the current tenant after execution
     def with_tenant(tenant, options = {}, &block)
+      if current_tenant != tenant && tenant != nil
+        log_multitenant_violation_if_needed('with_tenant')
+      end
+
       previous_tenant = Multitenant.current_tenant
-      Multitenant.current_tenant = tenant
+      _set_current_tenant(tenant)
+      
       previous_extra_tenant_ids = Multitenant.extra_tenant_ids
       Multitenant.extra_tenant_ids = options[:extra_tenant_ids] if options[:extra_tenant_ids]
       yield
     ensure
-      Multitenant.current_tenant = previous_tenant
+      _set_current_tenant(previous_tenant)
       Multitenant.extra_tenant_ids = previous_extra_tenant_ids
     end
 
     def dangerous_cross_tenants(&block)
+      if !allow_dangerous_cross_tenants
+        log_multitenant_violation_if_needed('dangerous_cross_tenants')
+      end
+      
       previous_value = Multitenant.allow_dangerous_cross_tenants
-      Multitenant.allow_dangerous_cross_tenants = true
+      _set_allow_dangerous_cross_tenants(true)
+      
       Multitenant.with_tenant(nil) do
         yield
       end
     ensure
-      Multitenant.allow_dangerous_cross_tenants = previous_value
+      _set_allow_dangerous_cross_tenants(previous_value)
+    end
+    
+    private
+    
+    def _set_current_tenant(value)
+      Thread.current[CURRENT_TENANT] = value
+    end
+    
+    def _set_allow_dangerous_cross_tenants(value)
+      Thread.current[ALLOW_DANGEROUS] = value
+    end
+    
+    def log_multitenant_violation_if_needed(kind)
+      if Thread.current[ALLOW_NEXT_TENANT_OPERATION]
+        Thread.current[ALLOW_NEXT_TENANT_OPERATION] = false
+        return
+      end
+
+      return unless Random.rand < Multitenant.multitenant_violation_log_sample_rate
+
+      $logger.warn(
+        tag: 'multitenant_violation',
+        message: 'multitenant usage outside allowed contexts',
+        kind: kind,
+      )
+    rescue => e
+      begin
+        $logger.error(tag: 'multitenant_violation', message: 'error while logging multitenant violation', error: e.message)
+      rescue
+      end
     end
   end
 

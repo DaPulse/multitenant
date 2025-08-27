@@ -218,4 +218,176 @@ describe Multitenant do
       @user.company_id.should == @company.id
     end
   end
+
+  describe "logging" do
+    let(:mock_logger) { double('logger') }
+    
+    before do
+      $logger = mock_logger
+      Multitenant.multitenant_violation_log_sample_rate = 1.0
+      mock_logger.stub(:respond_to?).with(:warn).and_return(true)
+      mock_logger.stub(:respond_to?).with(:error).and_return(true)
+    end
+    
+    after do
+      Multitenant.multitenant_violation_log_sample_rate = 0
+      $logger = nil
+    end
+
+    it "current_tenant= logs violations when changing tenant" do
+      tenant = Company.create! :name => 'test'
+      
+      mock_logger.should_receive(:warn).with(
+        :tag => 'multitenant_violation',
+        :message => 'multitenant usage outside allowed contexts',
+        :kind => 'current_tenant_set'
+      )
+      Multitenant.current_tenant = tenant
+    end
+
+    it "current_tenant= skips logging when allow_next_tenant_operation is called" do
+      tenant = Company.create! :name => 'test'
+      Multitenant.allow_next_tenant_operation
+      
+      mock_logger.should_not_receive(:warn)
+      Multitenant.current_tenant = tenant
+    end
+
+    it "current_tenant= logs normally after skip flag is consumed" do
+      tenant1 = Company.create! :name => 'test1'
+      tenant2 = Company.create! :name => 'test2'
+      
+      # Use skip flag first to consume it
+      Multitenant.allow_next_tenant_operation
+      Multitenant.current_tenant = tenant1
+      
+      # Next call should log normally (proving flag was consumed)
+      mock_logger.should_receive(:warn).with(
+        :tag => 'multitenant_violation',
+        :message => 'multitenant usage outside allowed contexts',
+        :kind => 'current_tenant_set'
+      )
+      Multitenant.current_tenant = tenant2
+    end
+
+    it "allow_dangerous_cross_tenants= logs violations when enabling dangerous mode" do
+      # Ensure initial state is false so the logging condition will be met
+      Thread.current['Multitenant.allow_dangerous_cross_tenants'] = false
+      
+      mock_logger.should_receive(:warn).with(
+        :tag => 'multitenant_violation',
+        :message => 'multitenant usage outside allowed contexts',
+        :kind => 'allow_dangerous_cross_tenants_set'
+      )
+      Multitenant.allow_dangerous_cross_tenants = true
+    end
+
+    it "allow_dangerous_cross_tenants= skips logging when allow_next_tenant_operation is called" do
+      # Ensure initial state is false so the logging condition will be met
+      Thread.current['Multitenant.allow_dangerous_cross_tenants'] = false
+      Multitenant.allow_next_tenant_operation
+      
+      mock_logger.should_not_receive(:warn)
+      Multitenant.allow_dangerous_cross_tenants = true
+    end
+
+    it "allow_dangerous_cross_tenants= logs normally after skip flag is consumed" do
+      # Ensure initial state is false
+      Thread.current['Multitenant.allow_dangerous_cross_tenants'] = false
+      
+      # Use skip flag first to consume it
+      Multitenant.allow_next_tenant_operation
+      Multitenant.allow_dangerous_cross_tenants = true
+      
+      # Reset state and next call should log normally
+      Thread.current['Multitenant.allow_dangerous_cross_tenants'] = false
+      mock_logger.should_receive(:warn).with(
+        :tag => 'multitenant_violation',
+        :message => 'multitenant usage outside allowed contexts',
+        :kind => 'allow_dangerous_cross_tenants_set'
+      )
+      Multitenant.allow_dangerous_cross_tenants = true
+    end
+
+    it "with_tenant logs violations when switching tenant" do
+      current_tenant = Company.create! :name => 'current'
+      new_tenant = Company.create! :name => 'new'
+      Thread.current['Multitenant.current_tenant'] = current_tenant
+      
+      mock_logger.should_receive(:warn).with(
+        :tag => 'multitenant_violation',
+        :message => 'multitenant usage outside allowed contexts',
+        :kind => 'with_tenant'
+      )
+      Multitenant.with_tenant(new_tenant) { }
+    end
+
+    it "with_tenant skips logging when allow_next_tenant_operation is called" do
+      current_tenant = Company.create! :name => 'current'
+      new_tenant = Company.create! :name => 'new'
+      Thread.current['Multitenant.current_tenant'] = current_tenant
+      Multitenant.allow_next_tenant_operation
+      
+      mock_logger.should_not_receive(:warn)
+      Multitenant.with_tenant(new_tenant) { }
+    end
+
+    it "with_tenant logs normally after skip flag is consumed" do
+      current_tenant = Company.create! :name => 'current'
+      new_tenant1 = Company.create! :name => 'new1'
+      new_tenant2 = Company.create! :name => 'new2'
+      Thread.current['Multitenant.current_tenant'] = current_tenant
+      
+      # Use skip flag first to consume it
+      Multitenant.allow_next_tenant_operation
+      Multitenant.with_tenant(new_tenant1) { }
+      
+      # Next call should log normally
+      mock_logger.should_receive(:warn).with(
+        :tag => 'multitenant_violation',
+        :message => 'multitenant usage outside allowed contexts',
+        :kind => 'with_tenant'
+      )
+      Multitenant.with_tenant(new_tenant2) { }
+    end
+
+    it "dangerous_cross_tenants logs violations when entering dangerous mode" do
+      # Ensure allow_dangerous_cross_tenants is false so logging condition is met
+      Thread.current['Multitenant.allow_dangerous_cross_tenants'] = false
+      
+      mock_logger.should_receive(:warn).with(
+        :tag => 'multitenant_violation',
+        :message => 'multitenant usage outside allowed contexts',
+        :kind => 'dangerous_cross_tenants'
+      )
+      Multitenant.dangerous_cross_tenants { }
+    end
+
+    it "dangerous_cross_tenants skips logging when allow_next_tenant_operation is called" do
+      # Ensure allow_dangerous_cross_tenants is false so logging condition is met
+      Thread.current['Multitenant.allow_dangerous_cross_tenants'] = false
+      Multitenant.allow_next_tenant_operation
+      
+      mock_logger.should_not_receive(:warn)
+      Multitenant.dangerous_cross_tenants { }
+    end
+
+    it "dangerous_cross_tenants logs normally after skip flag is consumed" do
+      # Ensure allow_dangerous_cross_tenants is false so logging condition is met
+      Thread.current['Multitenant.allow_dangerous_cross_tenants'] = false
+      
+      # Use skip flag first to consume it
+      Multitenant.allow_next_tenant_operation
+      Multitenant.dangerous_cross_tenants { }
+      
+      # Reset state and next call should log normally
+      Thread.current['Multitenant.allow_dangerous_cross_tenants'] = false
+      mock_logger.should_receive(:warn).with(
+        :tag => 'multitenant_violation',
+        :message => 'multitenant usage outside allowed contexts',
+        :kind => 'dangerous_cross_tenants'
+      )
+      Multitenant.dangerous_cross_tenants { }
+    end
+  end
 end
