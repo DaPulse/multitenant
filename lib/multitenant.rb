@@ -19,7 +19,7 @@ module Multitenant
       previous_state = current_context_state
       Thread.current[CURRENT_TENANT] = value
       current_state = current_context_state
-      notify_context_change(previous_state, current_state) if previous_state != current_state
+      notify_context_change(previous_state, current_state)
     end
 
     def allow_dangerous_cross_tenants
@@ -30,7 +30,7 @@ module Multitenant
       previous_state = current_context_state
       Thread.current[ALLOW_DANGEROUS] = value
       current_state = current_context_state
-      notify_context_change(previous_state, current_state) if previous_state != current_state
+      notify_context_change(previous_state, current_state)
     end
 
     def extra_tenant_ids
@@ -81,6 +81,10 @@ module Multitenant
     end
 
     def notify_context_change(previous_state, current_state)
+      if previous_state == current_state
+        return
+      end
+
       CONTEXT_CHANGE_CALLBACKS.each { |callback| callback.call(previous_state, current_state) }
     end
   end
