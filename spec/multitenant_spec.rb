@@ -319,7 +319,7 @@ describe Multitenant do
       calls.should be_empty
     end
 
-    it 'with_tenant triggers enter and exit notifications' do
+    it 'with_tenant triggers enter notification only' do
       Multitenant.current_tenant = :old
       calls = []
       cb = lambda { |prev, cur| calls << [prev, cur] }
@@ -327,11 +327,9 @@ describe Multitenant do
       Multitenant.with_tenant :new do
         # no-op
       end
-      calls.length.should == 2
+      calls.length.should == 1
       calls[0][0].should == {:tenant => :old, :is_cross_tenant => false}
       calls[0][1].should == {:tenant => :new, :is_cross_tenant => false}
-      calls[1][0].should == {:tenant => :new, :is_cross_tenant => false}
-      calls[1][1].should == {:tenant => :old, :is_cross_tenant => false}
     end
 
     it 'with_tenant same tenant does not trigger notifications' do
@@ -345,7 +343,7 @@ describe Multitenant do
       calls.should be_empty
     end
 
-    it 'dangerous_cross_tenants triggers enter/exit sequence' do
+    it 'dangerous_cross_tenants suppresses tenant restore and allow exit notifications' do
       Multitenant.current_tenant = :acct
       Multitenant.allow_dangerous_cross_tenants = false
       calls = []
@@ -354,19 +352,30 @@ describe Multitenant do
       Multitenant.dangerous_cross_tenants do
         # no-op
       end
-      calls.length.should == 4
+      calls.length.should == 2
       # 1) allow: false→true
       calls[0][0].should == {:tenant => :acct, :is_cross_tenant => false}
       calls[0][1].should == {:tenant => :acct, :is_cross_tenant => true}
       # 2) tenant: :acct→nil (while cross)
       calls[1][0].should == {:tenant => :acct, :is_cross_tenant => true}
       calls[1][1].should == {:tenant => nil, :is_cross_tenant => true}
-      # 3) tenant: nil→:acct (while cross)
-      calls[2][0].should == {:tenant => nil, :is_cross_tenant => true}
-      calls[2][1].should == {:tenant => :acct, :is_cross_tenant => true}
-      # 4) allow: true→false
-      calls[3][0].should == {:tenant => :acct, :is_cross_tenant => true}
-      calls[3][1].should == {:tenant => :acct, :is_cross_tenant => false}
+    end
+
+    it 'nested with_tenant triggers only enter notifications for each level' do
+      Multitenant.current_tenant = :root
+      calls = []
+      cb = lambda { |prev, cur| calls << [prev, cur] }
+      Multitenant.on_context_change(&cb)
+      Multitenant.with_tenant :lvl1 do
+        Multitenant.with_tenant :lvl2 do
+          # no-op
+        end
+      end
+      calls.length.should == 2
+      calls[0][0].should == {:tenant => :root, :is_cross_tenant => false}
+      calls[0][1].should == {:tenant => :lvl1, :is_cross_tenant => false}
+      calls[1][0].should == {:tenant => :lvl1, :is_cross_tenant => false}
+      calls[1][1].should == {:tenant => :lvl2, :is_cross_tenant => false}
     end
 
     it 'invokes multiple callbacks in registration order' do

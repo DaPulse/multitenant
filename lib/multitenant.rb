@@ -63,8 +63,17 @@ module Multitenant
       Multitenant.extra_tenant_ids = options[:extra_tenant_ids] if options[:extra_tenant_ids]
       yield
     ensure
-      Multitenant.current_tenant = previous_tenant
+      without_context_change_notifications do
+        Multitenant.current_tenant = previous_tenant
+      end
       Multitenant.extra_tenant_ids = previous_extra_tenant_ids
+    end
+
+    def without_context_change_notifications
+      Thread.current[:multitenant_suppress_ctx_change] = Thread.current[:multitenant_suppress_ctx_change].to_i + 1
+      yield
+    ensure
+      Thread.current[:multitenant_suppress_ctx_change] = Thread.current[:multitenant_suppress_ctx_change].to_i - 1
     end
 
     def dangerous_cross_tenants(&block)
@@ -74,7 +83,9 @@ module Multitenant
         yield
       end
     ensure
-      Multitenant.allow_dangerous_cross_tenants = previous_value
+      without_context_change_notifications do
+        Multitenant.allow_dangerous_cross_tenants = previous_value
+      end
     end
 
     def current_context_state
@@ -85,9 +96,7 @@ module Multitenant
     end
 
     def notify_context_change(previous_state, current_state)
-      if previous_state == current_state
-        return
-      end
+      return if Thread.current[:multitenant_suppress_ctx_change].to_i > 0 || previous_state == current_state
 
       CONTEXT_CHANGE_CALLBACKS.each { |callback| callback.call(previous_state, current_state) }
     end
