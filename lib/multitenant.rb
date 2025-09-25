@@ -9,13 +9,17 @@ module Multitenant
     CURRENT_TENANT = 'Multitenant.current_tenant'.freeze
     ALLOW_DANGEROUS = 'Multitenant.allow_dangerous_cross_tenants'.freeze
     EXTRA_TENANT_IDS = 'Multitenant.extra_tenant_ids'.freeze
+    CONTEXT_CHANGE_CALLBACKS = []
 
     def current_tenant
       Thread.current[CURRENT_TENANT]
     end
 
     def current_tenant=(value)
+      previous_state = current_context_state
       Thread.current[CURRENT_TENANT] = value
+      current_state = current_context_state
+      notify_context_change(previous_state, current_state) if previous_state != current_state
     end
 
     def allow_dangerous_cross_tenants
@@ -23,7 +27,10 @@ module Multitenant
     end
 
     def allow_dangerous_cross_tenants=(value)
+      previous_state = current_context_state
       Thread.current[ALLOW_DANGEROUS] = value
+      current_state = current_context_state
+      notify_context_change(previous_state, current_state) if previous_state != current_state
     end
 
     def extra_tenant_ids
@@ -32,6 +39,15 @@ module Multitenant
 
     def extra_tenant_ids=(value)
       Thread.current[EXTRA_TENANT_IDS] = value
+    end
+
+    def on_context_change(&block)
+      raise ArgumentError, 'block required' unless block_given?
+      CONTEXT_CHANGE_CALLBACKS << block
+    end
+
+    def remove_on_context_change(block)
+      CONTEXT_CHANGE_CALLBACKS.delete(block)
     end
 
     # execute a block scoped to the current tenant
@@ -55,6 +71,17 @@ module Multitenant
       end
     ensure
       Multitenant.allow_dangerous_cross_tenants = previous_value
+    end
+
+    def current_context_state
+      return {
+        tenant: Thread.current[CURRENT_TENANT],
+        is_cross_tenant: (Thread.current[ALLOW_DANGEROUS] == true)
+      }
+    end
+
+    def notify_context_change(previous_state, current_state)
+      CONTEXT_CHANGE_CALLBACKS.each { |callback| callback.call(previous_state, current_state) }
     end
   end
 
