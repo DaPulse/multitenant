@@ -221,11 +221,13 @@ describe Multitenant do
 
   describe 'context change callbacks' do
     before do
+      Multitenant.clear_on_context_change
       Multitenant.current_tenant = nil
       Multitenant.allow_dangerous_cross_tenants = nil
     end
 
     after do
+      Multitenant.clear_on_context_change
       Multitenant.current_tenant = nil
       Multitenant.allow_dangerous_cross_tenants = nil
     end
@@ -238,7 +240,6 @@ describe Multitenant do
       calls.length.should == 1
       calls.first[0].should == {:tenant => nil, :is_cross_tenant => false}
       calls.first[1].should == {:tenant => :t1, :is_cross_tenant => false}
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'does not call when reassigning the same tenant' do
@@ -248,7 +249,6 @@ describe Multitenant do
       Multitenant.on_context_change(&cb)
       Multitenant.current_tenant = :t1
       calls.should be_empty
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'calls on tenant change A→B with correct prev/cur' do
@@ -260,7 +260,6 @@ describe Multitenant do
       calls.length.should == 1
       calls.first[0].should == {:tenant => :a, :is_cross_tenant => false}
       calls.first[1].should == {:tenant => :b, :is_cross_tenant => false}
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'calls on clearing tenant A→nil' do
@@ -272,7 +271,6 @@ describe Multitenant do
       calls.length.should == 1
       calls.first[0].should == {:tenant => :a, :is_cross_tenant => false}
       calls.first[1].should == {:tenant => nil, :is_cross_tenant => false}
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'calls when allow cross tenant changes false/nil→true' do
@@ -283,7 +281,6 @@ describe Multitenant do
       calls.length.should == 1
       calls.first[0].should == {:tenant => nil, :is_cross_tenant => false}
       calls.first[1].should == {:tenant => nil, :is_cross_tenant => true}
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'calls when allow cross tenant changes true→false' do
@@ -295,7 +292,6 @@ describe Multitenant do
       calls.length.should == 1
       calls.first[0].should == {:tenant => nil, :is_cross_tenant => true}
       calls.first[1].should == {:tenant => nil, :is_cross_tenant => false}
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'does not call when allow cross tenant remains falsy (nil→nil)' do
@@ -304,7 +300,6 @@ describe Multitenant do
       Multitenant.on_context_change(&cb)
       Multitenant.allow_dangerous_cross_tenants = nil
       calls.should be_empty
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'does not call when allow cross tenant remains the same (true→true)' do
@@ -314,7 +309,6 @@ describe Multitenant do
       Multitenant.on_context_change(&cb)
       Multitenant.allow_dangerous_cross_tenants = true
       calls.should be_empty
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'does not call when changing extra_tenant_ids' do
@@ -323,7 +317,6 @@ describe Multitenant do
       Multitenant.on_context_change(&cb)
       Multitenant.extra_tenant_ids = [1, 2]
       calls.should be_empty
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'with_tenant triggers enter and exit notifications' do
@@ -339,7 +332,6 @@ describe Multitenant do
       calls[0][1].should == {:tenant => :new, :is_cross_tenant => false}
       calls[1][0].should == {:tenant => :new, :is_cross_tenant => false}
       calls[1][1].should == {:tenant => :old, :is_cross_tenant => false}
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'with_tenant same tenant does not trigger notifications' do
@@ -351,7 +343,6 @@ describe Multitenant do
         # no-op
       end
       calls.should be_empty
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'dangerous_cross_tenants triggers enter/exit sequence' do
@@ -376,7 +367,6 @@ describe Multitenant do
       # 4) allow: true→false
       calls[3][0].should == {:tenant => :acct, :is_cross_tenant => true}
       calls[3][1].should == {:tenant => :acct, :is_cross_tenant => false}
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'invokes multiple callbacks in registration order' do
@@ -387,8 +377,6 @@ describe Multitenant do
       Multitenant.on_context_change(&cb2)
       Multitenant.current_tenant = :t
       order.should == [1, 2]
-      Multitenant.remove_on_context_change(cb1)
-      Multitenant.remove_on_context_change(cb2)
     end
 
     it 'remove_on_context_change unsubscribes the callback' do
@@ -404,14 +392,12 @@ describe Multitenant do
       cb = lambda { |prev, cur| raise 'boom' }
       Multitenant.on_context_change(&cb)
       lambda { Multitenant.current_tenant = :t }.should raise_error('boom')
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'raises from callback bubbles on allow cross tenant change' do
       cb = lambda { |prev, cur| raise 'boom2' }
       Multitenant.on_context_change(&cb)
       lambda { Multitenant.allow_dangerous_cross_tenants = true }.should raise_error('boom2')
-      Multitenant.remove_on_context_change(cb)
     end
 
     it 'state contains expected keys and values' do
@@ -422,7 +408,6 @@ describe Multitenant do
       seen.keys.sort.should == [:is_cross_tenant, :tenant]
       seen[:tenant].should == :acct
       seen[:is_cross_tenant].should == false
-      Multitenant.remove_on_context_change(cb)
     end
   end
 end

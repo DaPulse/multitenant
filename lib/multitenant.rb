@@ -50,6 +50,10 @@ module Multitenant
       CONTEXT_CHANGE_CALLBACKS.delete(block)
     end
 
+    def clear_on_context_change
+      CONTEXT_CHANGE_CALLBACKS.clear
+    end
+
     # execute a block scoped to the current tenant
     # unsets the current tenant after execution
     def with_tenant(tenant, options = {}, &block)
