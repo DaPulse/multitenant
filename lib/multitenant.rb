@@ -9,13 +9,19 @@ module Multitenant
     CURRENT_TENANT = 'Multitenant.current_tenant'.freeze
     ALLOW_DANGEROUS = 'Multitenant.allow_dangerous_cross_tenants'.freeze
     EXTRA_TENANT_IDS = 'Multitenant.extra_tenant_ids'.freeze
+    CONTEXT_CHANGE_CALLBACKS = []
 
     def current_tenant
       Thread.current[CURRENT_TENANT]
     end
 
     def current_tenant=(value)
+      previous_state = current_context_state
       Thread.current[CURRENT_TENANT] = value
+      current_state = current_context_state
+      notify_context_change(previous_state, current_state)
+
+      value
     end
 
     def allow_dangerous_cross_tenants
@@ -23,7 +29,12 @@ module Multitenant
     end
 
     def allow_dangerous_cross_tenants=(value)
+      previous_state = current_context_state
       Thread.current[ALLOW_DANGEROUS] = value
+      current_state = current_context_state
+      notify_context_change(previous_state, current_state)
+
+      value
     end
 
     def extra_tenant_ids
@@ -32,6 +43,19 @@ module Multitenant
 
     def extra_tenant_ids=(value)
       Thread.current[EXTRA_TENANT_IDS] = value
+    end
+
+    def on_context_change(&block)
+      raise ArgumentError, 'block required' unless block_given?
+      CONTEXT_CHANGE_CALLBACKS << block
+    end
+
+    def remove_on_context_change(block)
+      CONTEXT_CHANGE_CALLBACKS.delete(block)
+    end
+
+    def clear_on_context_change
+      CONTEXT_CHANGE_CALLBACKS.clear
     end
 
     # execute a block scoped to the current tenant
@@ -43,7 +67,10 @@ module Multitenant
       Multitenant.extra_tenant_ids = options[:extra_tenant_ids] if options[:extra_tenant_ids]
       yield
     ensure
-      Multitenant.current_tenant = previous_tenant
+      # Suppress context change notifications when restoring the previous tenant
+      without_context_change_notifications do
+        Multitenant.current_tenant = previous_tenant
+      end
       Multitenant.extra_tenant_ids = previous_extra_tenant_ids
     end
 
@@ -54,7 +81,32 @@ module Multitenant
         yield
       end
     ensure
-      Multitenant.allow_dangerous_cross_tenants = previous_value
+      # Suppress context change notifications when restoring the previous tenant
+      without_context_change_notifications do
+        Multitenant.allow_dangerous_cross_tenants = previous_value
+      end
+    end
+
+    def without_context_change_notifications
+      Thread.current[:multitenant_suppress_ctx_change] = Thread.current[:multitenant_suppress_ctx_change].to_i + 1
+      yield
+    ensure
+      Thread.current[:multitenant_suppress_ctx_change] = Thread.current[:multitenant_suppress_ctx_change].to_i - 1
+    end
+
+
+    def current_context_state
+      return {
+        tenant: Thread.current[CURRENT_TENANT],
+        is_cross_tenant: (Thread.current[ALLOW_DANGEROUS] == true)
+      }
+    end
+
+    def notify_context_change(previous_state, current_state)
+      return if Thread.current[:multitenant_suppress_ctx_change].to_i > 0
+      return if previous_state == current_state
+
+      CONTEXT_CHANGE_CALLBACKS.each { |callback| callback.call(previous_state, current_state) }
     end
   end
 
