@@ -418,5 +418,13 @@ describe Multitenant do
       seen[:tenant].should == :acct
       seen[:is_cross_tenant].should == false
     end
+
+    it 'current_tenant= returns the assigned value' do
+      (Multitenant.current_tenant = :ret_acct).should == :ret_acct
+    end
+
+    it 'allow_dangerous_cross_tenants= returns the assigned value' do
+      (Multitenant.allow_dangerous_cross_tenants = true).should == true
+    end
   end
 end
